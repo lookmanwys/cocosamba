@@ -122,7 +122,6 @@ function PayContent() {
   }
 
   const totalUSD = amount * 1.0;
-
   return (
     <main className="min-h-screen px-4 sm:px-6 py-8 sm:py-12">
       <div className="max-w-xl mx-auto">
@@ -298,7 +297,8 @@ function PayContent() {
                 02
               </div>
               <div className="text-white/60 text-xs leading-relaxed">
-                               Payment is confirmed on-chain
+                Payment is confirmed on-chain
+              </div>
             </div>
             <div className="flex gap-3">
               <div className="mono-label text-orange-500 shrink-0 w-6">
