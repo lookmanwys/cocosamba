@@ -3,4 +3,12 @@
   publish = ".next"
 
 [[plugins]]
+  package = "@netlify/plugin-nextjs"[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_USDT_TRC20_ADDRESS,NEXT_PUBLIC_BTC_ADDRESS,NEXT_PUBLIC_SOL_ADDRESS"
+
+[[plugins]]
   package = "@netlify/plugin-nextjs"
