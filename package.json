@@ -12,7 +12,7 @@
     "@isdisposable/js": "^1.0.7",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
-    "next": "16.3.5",
+    "next": "^16.4.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "validator": "^13.15.35"
@@ -28,5 +28,9 @@
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+
+    "overrides": {
+    "minimatch": "11.0.1"
   }
 }
