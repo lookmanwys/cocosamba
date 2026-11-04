@@ -1,272 +1,266 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 type Coin = "BTC" | "USDT" | "SOL";
 
-const COINS: Record<
-  Coin,
-  { label: string; network: string; color: string; icon: string }
-> = {
-  BTC: {
-    label: "Bitcoin",
-    network: "Bitcoin network",
-    color: "#f7931a",
+const COINS: Record<Coin, { label: string; network: string; color: string; icon: string; address: string }> = {
+  BTC: { 
+    label: "Bitcoin", 
+    network: "Bitcoin network", 
+    color: "#f7931a", 
     icon: "₿",
+    address: process.env.NEXT_PUBLIC_BTC_ADDRESS || "Address not configured"
   },
-  USDT: {
-    label: "USDT",
-    network: "Tron · TRC-20",
-    color: "#26a17b",
+  USDT: { 
+    label: "USDT", 
+    network: "Tron · TRC-20", 
+    color: "#26a17b", 
     icon: "₮",
+    address: process.env.NEXT_PUBLIC_USDT_TRC20_ADDRESS || "Address not configured"
   },
-  SOL: {
-    label: "Solana",
-    network: "Solana network",
-    color: "#9945ff",
+  SOL: { 
+    label: "Solana", 
+    network: "Solana network", 
+    color: "#9945ff", 
     icon: "◎",
+    address: process.env.NEXT_PUBLIC_SOL_ADDRESS || "Address not configured"
   },
 };
 
-const PRICE_PER_MRSC = 1.0;
+type PaymentData = {
+  id: string;
+  coin: Coin;
+  amount_usd: number;
+  mrsc_credited: number;
+  status: string;
+};
 
-export default function BuyPage() {
+function PayContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
-  const [amount, setAmount] = useState<string>("");
-  const [selected, setSelected] = useState<Coin>("BTC");
-  const [balance, setBalance] = useState<number>(0);
-  const [checking, setChecking] = useState(true);
+  const paymentId = searchParams.get("payment_id");
+
+  const [payment, setPayment] = useState<PaymentData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    async function checkAuth() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    if (!paymentId) {
+      router.push("/buy");
+      return;
+    }
+
+    async function fetchPayment() {
+      // Verify the user is logged in
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push("/login");
         return;
       }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("is_admin, balance_mrsc")
-        .eq("id", user.id)
+      // Fetch the payment (RLS ensures they can only see their own)
+      const { data, error } = await supabase
+        .from("payments")
+        .select("*")
+        .eq("id", paymentId)
         .single();
 
-      if (profile?.is_admin) {
-        router.push("/admin");
-        return;
+      if (error || !data) {
+        setError("Payment record not found.");
+      } else {
+        setPayment(data);
       }
-
-      setBalance(Number(profile?.balance_mrsc || 0));
-      setChecking(false);
+      setLoading(false);
     }
-    checkAuth();
-  }, [router, supabase]);
 
-  const numericAmount = parseFloat(amount) || 0;
-  const totalUSD = numericAmount * PRICE_PER_MRSC;
+    fetchPayment();
+  }, [paymentId, router, supabase]);
 
-  function handleContinue() {
-    if (numericAmount < 1) return;
-    router.push(`/buy/pay?amount=${numericAmount}&coin=${selected}`);
+  function copyAddress() {
+    if (!payment) return;
+    const address = COINS[payment.coin].address;
+    navigator.clipboard.writeText(address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
-  if (checking) {
+  if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center">
-        <div className="text-white/40 text-sm">Loading...</div>
+        <div className="text-white/40 text-sm">Loading payment details...</div>
       </main>
     );
   }
+
+  if (error || !payment) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-6">
+        <div className="glass rounded-2xl p-8 max-w-md text-center">
+          <div className="text-red-400 text-sm mb-4">{error || "Invalid payment"}</div>
+          <Link href="/buy" className="text-orange-500 text-sm hover:text-orange-400">
+            ← Return to Buy page
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  const coinInfo = COINS[payment.coin];
 
   return (
     <main className="min-h-screen px-4 sm:px-6 py-8 sm:py-12">
       <div className="max-w-xl mx-auto">
         {/* ============ TOP BAR ============ */}
         <div className="flex items-center justify-between mb-10 fade-up">
-          <Link href="/dashboard" className="flex items-center gap-3 group">
+          <Link href="/buy" className="flex items-center gap-3 group">
             <div className="logo-mark" style={{ width: 36, height: 36 }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 2L3 7v10l9 5 9-5V7l-9-5z"
-                  stroke="white"
-                  strokeWidth="1.5"
-                  strokeLinejoin="round"
-                />
+                <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
                 <circle cx="12" cy="12" r="3" fill="white" />
               </svg>
             </div>
             <div>
-              <div className="text-sm font-semibold group-hover:text-orange-500 transition">
-                MarsChain
-              </div>
-              <div className="text-xs text-white/40">Buy $MRSC</div>
+              <div className="text-sm font-semibold group-hover:text-orange-500 transition">MarsChain</div>
+              <div className="text-xs text-white/40">Payment</div>
             </div>
           </Link>
-          <Link
-            href="/dashboard"
-            className="mono-label hover:text-orange-500 transition"
-          >
-            ← Wallet
+          <Link href="/buy" className="mono-label hover:text-orange-500 transition">
+            ← Change
           </Link>
         </div>
 
         {/* ============ HEADING ============ */}
         <div className="mb-8 fade-up fade-up-delay-1">
           <div className="flex items-center justify-between mb-3">
-            <span className="mono-label">Step 1 of 2</span>
-            <span className="mono-label">$1.00 per $MRSC</span>
+            <span className="mono-label">Step 2 of 2</span>
+            <span className="mono-label text-orange-500">Awaiting payment</span>
           </div>
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">
-            Purchase $MRSC
+            Send {coinInfo.label}
           </h1>
           <p className="text-white/40 text-sm mt-3">
-            Enter how much you want to buy, then choose how to pay.
+            Send the exact amount to the address below. Your balance will update after confirmation.
           </p>
         </div>
 
-        {/* ============ BALANCE PANEL ============ */}
+        {/* ============ ORDER SUMMARY ============ */}
         <div className="glass rounded-2xl p-6 mb-4 fade-up fade-up-delay-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="mono-label">Current balance</span>
-              <div className="text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight mt-2">
-                {balance.toLocaleString()}
-                <span className="text-orange-500 text-base sm:text-lg ml-2">
-                  $MRSC
-                </span>
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="mono-label">Value</span>
-              <div className="text-sm font-mono mt-2">
-                $
-                {balance.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ============ AMOUNT PANEL ============ */}
-        <div className="glass rounded-3xl p-6 sm:p-7 mb-4 fade-up fade-up-delay-2">
-          <span className="mono-label">Purchase amount</span>
-
-          <div className="relative mt-4">
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full bg-transparent border-0 text-4xl sm:text-5xl font-semibold tabular-nums tracking-tight outline-none placeholder:text-white/15 pr-24"
-              placeholder="0"
-            />
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 text-white/40 text-base font-mono">
-              $MRSC
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 mt-6">
-            {[100, 500, 1000, 5000, 10000].map((n) => (
-              <button
-                key={n}
-                onClick={() => setAmount(String(n))}
-                className="px-3 py-1.5 text-xs mono-label rounded-lg border border-white/10 hover:border-orange-500/50 hover:text-orange-500 transition"
-              >
-                {n.toLocaleString()}
-              </button>
-            ))}
-          </div>
-
-          {numericAmount > 0 && (
-            <div className="mt-6 pt-5 border-t border-white/5 flex items-center justify-between">
-              <span className="mono-label">You pay</span>
-              <span className="text-2xl font-semibold tabular-nums">
-                $
-                {totalUSD.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}{" "}
-                <span className="text-white/40 text-sm font-normal">USD</span>
+          <span className="mono-label">Order summary</span>
+          <div className="mt-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-white/50">Amount</span>
+              <span className="text-sm font-semibold tabular-nums">
+                {Number(payment.mrsc_credited).toLocaleString()} $MRSC
               </span>
             </div>
-          )}
-        </div>
-
-        {/* ============ PAYMENT METHOD ============ */}
-        <div className="glass rounded-2xl p-6 mb-4 fade-up fade-up-delay-3">
-          <span className="mono-label">Payment method</span>
-
-          <div className="space-y-2 mt-4">
-            {(Object.keys(COINS) as Coin[]).map((key) => {
-              const c = COINS[key];
-              const isActive = selected === key;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setSelected(key)}
-                  className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border transition text-left ${
-                    isActive
-                      ? "border-orange-500/60 bg-orange-500/5"
-                      : "border-white/10 hover:border-white/20"
-                  }`}
-                >
-                  <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-semibold shrink-0"
-                    style={{
-                      background: `${c.color}20`,
-                      color: c.color,
-                    }}
-                  >
-                    {c.icon}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold">{c.label}</div>
-                    <div className="mono-label mt-0.5">{c.network}</div>
-                  </div>
-                  <div
-                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition shrink-0 ${
-                      isActive ? "border-orange-500" : "border-white/20"
-                    }`}
-                  >
-                    {isActive && (
-                      <div className="w-2 h-2 rounded-full bg-orange-500" />
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-white/50">Price</span>
+              <span className="text-sm font-semibold tabular-nums">$1.00 / token</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-white/50">Method</span>
+              <span className="text-sm font-semibold">{coinInfo.label}</span>
+            </div>
+            <div className="pt-4 border-t border-white/5 flex items-center justify-between">
+              <span className="mono-label">Total due</span>
+              <span className="text-2xl font-semibold tabular-nums text-orange-500">
+                ${Number(payment.amount_usd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* ============ CONTINUE ============ */}
-        <button
-          onClick={handleContinue}
-          disabled={numericAmount < 1}
-          className="btn-primary fade-up fade-up-delay-4"
-        >
-          {numericAmount < 1
-            ? "Enter an amount"
-            : `Continue with ${COINS[selected].label} →`}
-        </button>
+        {/* ============ DEPOSIT ADDRESS ============ */}
+        <div className="glass rounded-3xl p-6 sm:p-7 mb-4 fade-up fade-up-delay-3 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 pointer-events-none" style={{ background: "radial-gradient(circle, rgba(255,87,34,0.06) 0%, transparent 70%)", transform: "translate(40%, -40%)" }} />
+          <div className="relative">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl font-semibold shrink-0" style={{ background: `${coinInfo.color}20`, color: coinInfo.color }}>
+                {coinInfo.icon}
+              </div>
+              <div>
+                <div className="text-sm font-semibold">{coinInfo.label} deposit address</div>
+                <div className="mono-label mt-0.5">{coinInfo.network}</div>
+              </div>
+            </div>
+            <div className="bg-black/40 border border-white/10 rounded-xl p-4 mb-4">
+              <div className="font-mono text-xs break-all text-white/90 leading-relaxed">
+                {coinInfo.address}
+              </div>
+            </div>
+            <button onClick={copyAddress} className="btn-primary" disabled={coinInfo.address === "Address not configured"}>
+              {copied ? "✓ Copied" : "Copy address"}
+            </button>
+          </div>
+        </div>
+
+        {/* ============ WARNING ============ */}
+        <div className="glass rounded-2xl p-5 mb-4 fade-up fade-up-delay-3">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+            </svg>
+            <div>
+              <div className="text-sm font-semibold text-amber-300 mb-1">Send only {coinInfo.label}</div>
+              <p className="text-white/50 text-xs leading-relaxed">
+                Send <strong className="text-white/80">exactly ${Number(payment.amount_usd).toFixed(2)}</strong> worth of {coinInfo.label} on the {coinInfo.network}. Sending the wrong coin, wrong network, or wrong amount may result in lost funds.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* ============ NEXT STEPS ============ */}
+        <div className="glass rounded-2xl p-6 mb-6 fade-up fade-up-delay-4">
+          <span className="mono-label">What happens next</span>
+          <div className="mt-4 space-y-4">
+            <div className="flex gap-3">
+              <div className="mono-label text-orange-500 shrink-0 w-6">01</div>
+              <div className="text-white/60 text-xs leading-relaxed">Send ${Number(payment.amount_usd).toFixed(2)} worth of {coinInfo.label} to the address above</div>
+            </div>
+            <div className="flex gap-3">
+              <div className="mono-label text-orange-500 shrink-0 w-6">02</div>
+              <div className="text-white/60 text-xs leading-relaxed">Payment is confirmed on-chain by the MarsChain team</div>
+            </div>
+            <div className="flex gap-3">
+              <div className="mono-label text-orange-500 shrink-0 w-6">03</div>
+              <div className="text-white/60 text-xs leading-relaxed">Your $MRSC balance is credited to your wallet</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ============ BACK TO WALLET ============ */}
+        <div className="text-center mb-10 fade-up fade-up-delay-4">
+          <Link href="/dashboard" className="mono-label hover:text-orange-500 transition">
+            Done — back to wallet →
+          </Link>
+        </div>
 
         {/* ============ FOOTER ============ */}
-        <div className="flex items-center justify-between mt-10 fade-up fade-up-delay-4">
+        <div className="flex items-center justify-between fade-up fade-up-delay-4">
           <span className="mono-label">Secure checkout</span>
-          <span className="mono-label">
-            © {new Date().getFullYear()}
-          </span>
+          <span className="mono-label">© {new Date().getFullYear()}</span>
         </div>
       </div>
     </main>
+  );
+}
+
+// Next.js requires useSearchParams to be wrapped in a Suspense boundary
+export default function PayPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen flex items-center justify-center">
+        <div className="text-white/40 text-sm">Loading...</div>
+      </main>
+    }>
+      <PayContent />
+    </Suspense>
   );
 }

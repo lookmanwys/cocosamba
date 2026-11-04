@@ -54,86 +54,29 @@ export default function AdminPaymentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function confirmPayment(payment: Payment) {
-    setProcessing(payment.id);
+  async function processPayment(paymentId: string, newStatus: "confirmed" | "rejected") {
+    setProcessing(paymentId);
     setMessage(null);
 
-    const {
-      data: { user: admin },
-    } = await supabase.auth.getUser();
-
-    if (!admin) {
-      setMessage("Not authenticated");
-      setProcessing(null);
-      return;
-    }
-
-    // 1. Update payment status (with .select() to verify success)
-    const { data: updatedPayment, error: payError } = await supabase
-      .from("payments")
-      .update({
-        status: "confirmed",
-        confirmed_by: admin.id,
-        confirmed_at: new Date().toISOString(),
-      })
-      .eq("id", payment.id)
-      .select()
-      .single();
-
-    if (payError) {
-      setMessage(payError.message);
-      setProcessing(null);
-      return;
-    }
-
-    if (!updatedPayment || updatedPayment.status !== "confirmed") {
-      setMessage("Failed to update payment. Check RLS policies.");
-      setProcessing(null);
-      return;
-    }
-
-    // 2. Recalculate balance from scratch (prevents double-counting)
-    const { error: balError } = await supabase.rpc("recalculate_balance", {
-      user_profile_id: payment.profile_id,
+    // Call the secure database function
+    const { error } = await supabase.rpc("admin_process_payment", {
+      p_payment_id: paymentId,
+      p_new_status: newStatus,
     });
 
-    if (balError) {
-      setMessage(balError.message);
+    if (error) {
+      setMessage("Error: " + error.message);
       setProcessing(null);
       return;
     }
 
     setMessage(
-      `✓ Confirmed — ${payment.mrsc_credited.toLocaleString()} $MRSC credited to ${
-        payment.profiles?.username || "user"
-      }`
+      newStatus === "confirmed"
+        ? `✓ Payment confirmed and balance updated`
+        : `✓ Payment rejected`
     );
     setProcessing(null);
     await loadPayments();
-  }
-
-  async function rejectPayment(payment: Payment) {
-    if (!confirm("Reject this payment? This cannot be undone.")) return;
-
-    setProcessing(payment.id);
-    setMessage(null);
-
-    const { error } = await supabase
-      .from("payments")
-      .update({ status: "rejected" })
-      .eq("id", payment.id);
-
-    if (error) {
-      setMessage(error.message);
-    } else {
-      // Recalculate balance (in case this was previously confirmed)
-      await supabase.rpc("recalculate_balance", {
-        user_profile_id: payment.profile_id,
-      });
-      setMessage("Payment rejected");
-      await loadPayments();
-    }
-    setProcessing(null);
   }
 
   const filtered = payments.filter((p) => {
@@ -303,16 +246,18 @@ export default function AdminPaymentsPage() {
                       {p.status === "pending" && (
                         <div className="flex gap-2">
                           <button
-                            onClick={() => confirmPayment(p)}
+                            onClick={() => processPayment(p.id, "confirmed")}
                             disabled={processing === p.id}
                             className="px-3 py-1.5 text-xs bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-medium rounded-lg transition"
                           >
-                            {processing === p.id
-                              ? "Processing..."
-                              : "Confirm"}
+                            {processing === p.id ? "Processing..." : "Confirm"}
                           </button>
                           <button
-                            onClick={() => rejectPayment(p)}
+                            onClick={() => {
+                              if (confirm("Reject this payment? This cannot be undone.")) {
+                                processPayment(p.id, "rejected");
+                              }
+                            }}
                             disabled={processing === p.id}
                             className="px-3 py-1.5 text-xs border border-red-900/50 text-red-400 hover:bg-red-950/30 disabled:opacity-50 rounded-lg transition"
                           >

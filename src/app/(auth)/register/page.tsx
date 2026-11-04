@@ -74,24 +74,26 @@ export default function RegisterPage() {
     await supabase.auth.signOut();
     await new Promise((r) => setTimeout(r, 100));
 
+    // We pass the invite_code directly to the database trigger
     const { data, error } = await supabase.auth.signUp({
       email: email.trim().toLowerCase(),
       password,
       options: {
-        data: { username },
+        data: { 
+          username,
+          invite_code: inviteCode 
+        },
       },
     });
 
     if (error) {
+      // If the trigger throws an error (e.g. code used up), it shows up here
       setError(error.message);
       setLoading(false);
       return;
     }
 
     if (data.session) {
-      await supabase.rpc("redeem_invite_code", {
-        code_input: inviteCode,
-      });
       router.push("/dashboard");
       router.refresh();
       return;
